@@ -440,6 +440,10 @@ def main():
         },
     }
 
+    output_dir = os.path.dirname(args.output_file)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        
     with open(args.output_file, 'w') as f:
         json.dump(results, f, indent=2)
     print(f"\n  Results saved to {args.output_file}")
