@@ -9,7 +9,7 @@ pip install -r requirements.txt
 
 ## Run
 ```bash
-bash eval_weight_codellama.sh
+nohup bash eval_weight_codellama.sh > ./logs/soft_weight.log 2>&1 &
 ```
 
 ### Arguments
