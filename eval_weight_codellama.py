@@ -34,7 +34,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from transformers import RobertaTokenizer, RobertaModel
+from transformers import RobertaTokenizer, RobertaForMaskedLM
 from huggingface_hub import hf_hub_download
 from scipy.stats import norm
 
@@ -282,7 +282,7 @@ def main():
     print("  Step 2: Loading CodeBERT model")
     print("=" * 60)
     tokenizer = RobertaTokenizer.from_pretrained(args.ood_base_model)
-    model = RobertaModel.from_pretrained(args.ood_base_model, output_hidden_states=True)
+    model = RobertaForMaskedLM.from_pretrained(args.ood_base_model, output_hidden_states=True)
     model.to(device)
     model.eval()
     print(f"  Loaded {args.ood_base_model} on {device}")
