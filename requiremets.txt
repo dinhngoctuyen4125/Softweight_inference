@@ -1,0 +1,7 @@
+numpy==1.26.4
+torch==2.2.1
+tqdm==4.66.2
+transformers==4.31.0
+scipy==1.13.0
+scikit-learn==1.4.2
+huggingface-hub==0.22.2
