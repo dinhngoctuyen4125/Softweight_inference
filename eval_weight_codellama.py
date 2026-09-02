@@ -123,10 +123,12 @@ def compute_mah_scores(features, cov_estimators):
     features: list of 13 tensors, each shape (N, 768)
     cov_estimators: list of 13 EmpiricalCovariance objects
 
-    Returns: np array shape (N, 12) — layers 1..12 (skip layer 0, matching [:, 1:] in original code)
+    Returns: np array shape (N, 26) — 13 gaussian scores + 13 cosine scores
+    (OCSVM was trained with separate gaussian and cosine features per layer)
     """
     num_layers = len(features)
-    total_scores = []
+    gaussian_scores = []
+    cs_scores = []
 
     for i in range(num_layers):
         mean = torch.from_numpy(cov_estimators[i].location_).float().to(device)
@@ -136,17 +138,16 @@ def compute_mah_scores(features, cov_estimators):
         out_features = features[i].to(device)
         zero_f = out_features - mean
         gaussian_score = -0.5 * ((zero_f @ precision) @ zero_f.t()).diag()
+        gaussian_scores.append(gaussian_score.cpu().numpy())
 
         # cosine similarity with normalized features (self-referential for single batch)
         cs_score = fea_normalized.to(device) @ fea_normalized.t().to(device)
         cs_score = torch.max(cs_score, dim=1)[0]
+        cs_scores.append((-cs_score * 1000.).cpu().numpy())
 
-        all_score = -cs_score * 1000. + gaussian_score
-        total_scores.append(all_score.cpu().numpy())
-
-    # Stack and skip layer 0 (matching [:, 1:] in original code)
-    total_scores = np.stack(total_scores, axis=1)
-    return total_scores[:, 1:]
+    gaussian_scores = np.stack(gaussian_scores, axis=1)  # (N, 13)
+    cs_scores = np.stack(cs_scores, axis=1)              # (N, 13)
+    return np.concatenate([gaussian_scores, cs_scores], axis=1)  # (N, 26)
 
 
 def compute_mah_scores_with_ref(features, cov_estimators, ref_features):
@@ -157,10 +158,11 @@ def compute_mah_scores_with_ref(features, cov_estimators, ref_features):
     cov_estimators: list of 13 EmpiricalCovariance objects
     ref_features: list of 13 tensors — from D_forget (for cs_score)
 
-    Returns: np array shape (N, 12) — layers 1..12
+    Returns: np array shape (N, 26) — 13 gaussian scores + 13 cosine scores
     """
     num_layers = len(features)
-    total_scores = []
+    gaussian_scores = []
+    cs_scores = []
 
     for i in range(num_layers):
         mean = torch.from_numpy(cov_estimators[i].location_).float().to(device)
@@ -170,16 +172,16 @@ def compute_mah_scores_with_ref(features, cov_estimators, ref_features):
         out_features = features[i].to(device)
         zero_f = out_features - mean
         gaussian_score = -0.5 * ((zero_f @ precision) @ zero_f.t()).diag()
+        gaussian_scores.append(gaussian_score.cpu().numpy())
 
         out_fea_normalized = F.normalize(out_features, dim=-1)
         cs_score = out_fea_normalized @ ref_fea_normalized.t()
         cs_score = torch.max(cs_score, dim=1)[0]
+        cs_scores.append((-cs_score * 1000.).cpu().numpy())
 
-        all_score = -cs_score * 1000. + gaussian_score
-        total_scores.append(all_score.cpu().numpy())
-
-    total_scores = np.stack(total_scores, axis=1)
-    return total_scores[:, 1:]
+    gaussian_scores = np.stack(gaussian_scores, axis=1)  # (N, 13)
+    cs_scores = np.stack(cs_scores, axis=1)              # (N, 13)
+    return np.concatenate([gaussian_scores, cs_scores], axis=1)  # (N, 26)
 
 
 def build_text(sample, mode="probing"):
