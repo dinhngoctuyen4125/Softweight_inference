@@ -8,6 +8,6 @@ python eval_weight_codellama.py \
     --nondep_data "../Data-Collection/codellama/D_test_rest.json" \
     --ood_base_model "tummitum/codebert-deprecated" \
     --num_test_samples 100 \
-    --batch_size 16 \
+    --batch_size 64 \
     --seed 42 \
     --output_file "./weight_results_codellama.json"
