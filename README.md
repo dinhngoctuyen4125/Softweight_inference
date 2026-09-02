@@ -2,8 +2,8 @@
 
 ## Installation
 ```bash
-conda create -n o3 python=3.10
-conda activate o3
+conda create -n sw python=3.10
+conda activate sw
 pip install -r requirements.txt
 ```
 
