@@ -37,7 +37,7 @@ from tqdm import tqdm
 from transformers import RobertaTokenizer, RobertaModel
 from huggingface_hub import hf_hub_download
 from scipy.stats import norm
-from sklearn.mixture import GaussianMixture as GMM
+
 
 warnings.filterwarnings("ignore")
 
@@ -64,32 +64,20 @@ def set_seed(seed: int):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def weighting_func_gmm(train_in_score, test_in_score):
-    mean1, std1 = norm.fit(train_in_score)
-    mean2, std2 = norm.fit(test_in_score)
-    gmm = GMM(n_components=2)
-    gmm.means_ = np.array([[mean1], [mean2]])
-    gmm.covariances_ = np.array([[[std2 ** 2]], [[std2 ** 2]]])
-    gmm.weights_ = np.array([0.5, 0.5])
-    gmm.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(gmm.covariances_))
-    x0 = (mean1 + mean2) / 2
-    return gmm, x0
+def obtain_weights(input_x, mean, std):
+    """Compute soft-weight w(x) given forget distribution N(mean, std).
 
-
-def gmm_cdf(x, gmm):
-    weights = gmm.weights_
-    means = gmm.means_.flatten()
-    stds = np.sqrt(gmm.covariances_.flatten())
-    cdf_vals = [w * norm.cdf(x, mean, std) for w, mean, std in zip(weights, means, stds)]
-    return np.sum(cdf_vals)
-
-
-def obtain_weights(input_x, gmm, x0):
-    cp_x = gmm_cdf(input_x, gmm)
+    x0 = mean = median (for Gaussian)
+    p  = P(d_H(x))   = norm.cdf(input_x)
+    p' = P(d'_H(x))  = norm.cdf(2*x0 - input_x)
+    w  = sigma(C * (1 - |p - p'|) - range_th)
+    """
+    x0 = mean  # d_H^0 = median = mean for Gaussian
+    cp_x = norm.cdf(input_x, mean, std)
     symmetric_x = 2 * x0 - input_x
-    cp_symmetric_x = gmm_cdf(symmetric_x, gmm)
-    cp_sum = 1 - max(cp_x, cp_symmetric_x) + min(cp_x, cp_symmetric_x)
-    cp_sum *= 10  # scaling_factor
+    cp_symmetric_x = norm.cdf(symmetric_x, mean, std)
+    cp_sum = 1 - max(cp_x, cp_symmetric_x) + min(cp_x, cp_symmetric_x)  # 1 - |p - p'|
+    cp_sum *= 10  # C = scaling_factor
     range_th = 2
     w_res = math.exp(cp_sum - range_th) / (1 + math.exp(cp_sum - range_th))
     return w_res
@@ -330,8 +318,8 @@ def main():
             api_to_indices[api] = []
         api_to_indices[api].append(idx)
 
-    print(f"\n  Fitting GMM for each deprecated API...")
-    for api, indices in tqdm(api_to_indices.items(), desc="Fitting GMMs"):
+    print(f"\n  Fitting Gaussian for each deprecated API...")
+    for api, indices in tqdm(api_to_indices.items(), desc="Fitting distributions"):
         if api not in ocsvm_models:
             continue
 
@@ -342,14 +330,13 @@ def main():
         if len(api_scores) < 2:
             continue
 
-        gmm, x0 = weighting_func_gmm(api_scores, api_scores)
+        mean, std = norm.fit(api_scores)
         api_gmm_data[api] = {
-            'gmm': gmm,
-            'x0': x0,
-            'train_scores': train_scores,
+            'mean': mean,
+            'std': std,
         }
 
-    print(f"  Successfully fitted GMM for {len(api_gmm_data)} APIs")
+    print(f"  Successfully fitted distributions for {len(api_gmm_data)} APIs")
 
     # ---- 4. Test on D_test_U_dep (100 random samples) ----
     print("\n" + "=" * 60)
@@ -361,7 +348,7 @@ def main():
 
     # Filter to samples whose API exists in our OCSVM models
     d_dep_valid = [s for s in d_dep if get_api_key(s) in api_gmm_data]
-    print(f"  {len(d_dep_valid)} samples have matching OCSVM+GMM models")
+    print(f"  {len(d_dep_valid)} samples have matching OCSVM models")
 
     n_dep = min(args.num_test_samples, len(d_dep_valid))
     dep_samples = random.sample(d_dep_valid, n_dep)
@@ -380,7 +367,7 @@ def main():
         api = get_api_key(sample)
         ocsvm_model = ocsvm_models[api]["model"]
         score = ocsvm_model.score_samples(dep_mah_scores[i:i+1])
-        w = obtain_weights(score[0], api_gmm_data[api]['gmm'], api_gmm_data[api]['x0'])
+        w = obtain_weights(score[0], api_gmm_data[api]['mean'], api_gmm_data[api]['std'])
         dep_weights.append(w)
 
     print_weight_stats(dep_weights, "D_test_U_dep (deprecated API samples)")
@@ -395,7 +382,7 @@ def main():
 
     # Filter to samples whose API exists in our OCSVM models
     d_nondep_valid = [s for s in d_nondep if get_api_key(s) in api_gmm_data]
-    print(f"  {len(d_nondep_valid)} samples have matching OCSVM+GMM models")
+    print(f"  {len(d_nondep_valid)} samples have matching OCSVM models")
 
     n_nondep = min(args.num_test_samples, len(d_nondep_valid))
     nondep_samples = random.sample(d_nondep_valid, n_nondep)
@@ -414,7 +401,7 @@ def main():
         api = get_api_key(sample)
         ocsvm_model = ocsvm_models[api]["model"]
         score = ocsvm_model.score_samples(nondep_mah_scores[i:i+1])
-        w = obtain_weights(score[0], api_gmm_data[api]['gmm'], api_gmm_data[api]['x0'])
+        w = obtain_weights(score[0], api_gmm_data[api]['mean'], api_gmm_data[api]['std'])
         nondep_weights.append(w)
 
     print_weight_stats(nondep_weights, "D_test_U_nondep (new API samples)")
